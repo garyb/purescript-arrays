@@ -1,5 +1,5 @@
 module Data.Array.NonEmpty
-  ( NonEmptyArray
+  ( module Data.Array.Types
   , fromArray
   , fromNonEmpty
   , toArray
@@ -98,6 +98,7 @@ import Control.Alternative (class Alternative)
 import Control.Lazy (class Lazy)
 import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array as A
+import Data.Array.Types (NonEmptyArray)
 import Data.Bifunctor (bimap)
 import Data.Eq (class Eq1)
 import Data.Foldable (class Foldable)
@@ -114,50 +115,12 @@ import Data.Tuple (Tuple)
 import Data.Unfoldable (class Unfoldable)
 import Partial.Unsafe (unsafePartial)
 
-newtype NonEmptyArray a = NonEmptyArray (Array a)
-
-instance showNonEmptyArray :: Show a => Show (NonEmptyArray a) where
-  show (NonEmptyArray xs) = "(NonEmptyArray " <> show xs <> ")"
-
-derive newtype instance eqNonEmptyArray :: Eq a => Eq (NonEmptyArray a)
-derive newtype instance eq1NonEmptyArray :: Eq1 NonEmptyArray
-
-derive newtype instance ordNonEmptyArray :: Ord a => Ord (NonEmptyArray a)
-derive newtype instance ord1NonEmptyArray :: Ord1 NonEmptyArray 
-
-derive newtype instance functorNonEmptyArray :: Functor NonEmptyArray
-derive newtype instance functorWithIndexNonEmptyArray :: FunctorWithIndex Int NonEmptyArray
-
-derive newtype instance foldableNonEmptyArray :: Foldable NonEmptyArray
-derive newtype instance foldableWithIndexNonEmptyArray :: FoldableWithIndex Int NonEmptyArray
-
-instance foldable1NonEmptyArray :: Foldable1 NonEmptyArray where
-  foldMap1 = foldMap1Default
-  fold1 = fold1Impl (<>)
-
-derive newtype instance traversableNonEmptyArray :: Traversable NonEmptyArray
-derive newtype instance traversableWithIndexNonEmptyArray :: TraversableWithIndex Int NonEmptyArray
-
-instance traversable1NonEmptyArray :: Traversable1 NonEmptyArray where
-  traverse1 = traverse1Impl apply map
-  sequence1 = sequence1Default
-
-derive newtype instance applyNonEmptyArray :: Apply NonEmptyArray
-
-derive newtype instance applicativeNonEmptyArray :: Applicative NonEmptyArray
-
-derive newtype instance bindNonEmptyArray :: Bind NonEmptyArray
-
-derive newtype instance monadNonEmptyArray :: Monad NonEmptyArray
-
-derive newtype instance altNonEmptyArray :: Alt NonEmptyArray
-
 -- | Internal - adapt an Array transform to NonEmptyArray
 --
 -- Note that this is unsafe: if the transform returns an empty array, this can
 -- explode at runtime.
 unsafeAdapt :: forall a b. (Array a -> Array b) -> NonEmptyArray a -> NonEmptyArray b
-unsafeAdapt f = NonEmptyArray <<< adaptAny f
+unsafeAdapt f = nea <<< adaptAny f
 
 -- | Internal - adapt an Array transform to NonEmptyArray,
 --   with polymorphic result.
@@ -173,18 +136,21 @@ adaptMaybe f = unsafePartial $ fromJust <<< f <<< toArray
 
 fromArray :: forall a. Array a -> Maybe (NonEmptyArray a)
 fromArray xs
-  | A.length xs > 0 = Just (NonEmptyArray xs)
-  | otherwise       = Nothing
+  | A.length xs > 0 = Just (unsafeFromArray xs)
+  | otherwise = Nothing
 
 -- | INTERNAL
 unsafeFromArray :: forall a. Array a -> NonEmptyArray a
-unsafeFromArray = NonEmptyArray
+unsafeFromArray = unsafeCoerce
+
+unsafeFromArrayF :: forall f a. f (Array a) -> f (NonEmptyArray a)
+unsafeFromArrayF = unsafeCoerce
 
 fromNonEmpty :: forall a. NonEmpty Array a -> NonEmptyArray a
 fromNonEmpty (x :| xs) = cons' x xs
 
 toArray :: forall a. NonEmptyArray a -> Array a
-toArray (NonEmptyArray xs) = xs
+toArray = unsafeCoerce
 
 toNonEmpty :: forall a. NonEmptyArray a -> NonEmpty Array a
 toNonEmpty = uncons >>> \{head: x, tail: xs} -> x :| xs
@@ -199,7 +165,7 @@ toUnfoldable :: forall f a. Unfoldable f => NonEmptyArray a -> f a
 toUnfoldable = adaptAny A.toUnfoldable
 
 singleton :: forall a. a -> NonEmptyArray a
-singleton = NonEmptyArray <<< A.singleton
+singleton = unsafeFromArray <<< A.singleton
 
 range :: Int -> Int -> NonEmptyArray Int
 range x y = unsafeFromArray $ A.range x y
@@ -208,14 +174,14 @@ infix 8 range as ..
 
 -- | Replicate an item at least once
 replicate :: forall a. Int -> a -> NonEmptyArray a
-replicate i x = NonEmptyArray $ A.replicate (max 1 i) x
+replicate i x = unsafeFromArray $ A.replicate (max 1 i) x
 
 some
   :: forall f a
    . Alternative f
   => Lazy (f (Array a))
   => f a -> f (NonEmptyArray a)
-some = map NonEmptyArray <<< A.some
+some = unsafeFromArrayF <<< A.some
 
 length :: forall a. NonEmptyArray a -> Int
 length = adaptAny A.length
@@ -279,19 +245,19 @@ findLastIndex :: forall a. (a -> Boolean) -> NonEmptyArray a -> Maybe Int
 findLastIndex x = adaptAny $ A.findLastIndex x
 
 insertAt :: forall a. Int -> a -> NonEmptyArray a -> Maybe (NonEmptyArray a)
-insertAt i x = map NonEmptyArray <<< A.insertAt i x <<< toArray
+insertAt i x = unsafeFromArrayF <<< A.insertAt i x <<< toArray
 
 deleteAt :: forall a. Int -> NonEmptyArray a -> Maybe (Array a)
 deleteAt i = adaptAny $ A.deleteAt i
 
 updateAt :: forall a. Int -> a -> NonEmptyArray a -> Maybe (NonEmptyArray a)
-updateAt i x = map NonEmptyArray <<< A.updateAt i x <<< toArray
+updateAt i x = unsafeFromArrayF <<< A.updateAt i x <<< toArray
 
 updateAtIndices :: forall t a. Foldable t => t (Tuple Int a) -> NonEmptyArray a -> NonEmptyArray a
 updateAtIndices pairs = unsafeAdapt $ A.updateAtIndices pairs
 
 modifyAt :: forall a. Int -> (a -> a) -> NonEmptyArray a -> Maybe (NonEmptyArray a)
-modifyAt i f = map NonEmptyArray <<< A.modifyAt i f <<< toArray
+modifyAt i f = unsafeFromArrayF <<< A.modifyAt i f <<< toArray
 
 modifyAtIndices :: forall t a. Foldable t => t Int -> (a -> a) -> NonEmptyArray a -> NonEmptyArray a
 modifyAtIndices is f = unsafeAdapt $ A.modifyAtIndices is f
@@ -439,7 +405,7 @@ zipWith
   -> NonEmptyArray a
   -> NonEmptyArray b
   -> NonEmptyArray c
-zipWith f xs ys = NonEmptyArray $ A.zipWith f (toArray xs) (toArray ys)
+zipWith f xs ys = unsafeFromArray $ A.zipWith f (toArray xs) (toArray ys)
 
 
 zipWithA
@@ -449,13 +415,13 @@ zipWithA
   -> NonEmptyArray a
   -> NonEmptyArray b
   -> m (NonEmptyArray c)
-zipWithA f xs ys = NonEmptyArray <$> A.zipWithA f (toArray xs) (toArray ys)
+zipWithA f xs ys = unsafeFromArrayF $ A.zipWithA f (toArray xs) (toArray ys)
 
 zip :: forall a b. NonEmptyArray a -> NonEmptyArray b -> NonEmptyArray (Tuple a b)
-zip xs ys = NonEmptyArray $ toArray xs `A.zip` toArray ys
+zip xs ys = unsafeFromArray $ toArray xs `A.zip` toArray ys
 
 unzip :: forall a b. NonEmptyArray (Tuple a b) -> Tuple (NonEmptyArray a) (NonEmptyArray b)
-unzip = bimap NonEmptyArray NonEmptyArray <<< A.unzip <<< toArray
+unzip = bimap unsafeFromArray unsafeFromArray <<< A.unzip <<< toArray
 
 foldM :: forall m a b. Monad m => (a -> b -> m a) -> a -> NonEmptyArray b -> m a
 foldM f acc = adaptAny $ A.foldM f acc
